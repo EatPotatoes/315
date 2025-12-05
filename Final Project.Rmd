@@ -274,3 +274,50 @@ knitr::include_graphics("animated_world_sales.gif")
 knitr::include_graphics("animated_sales_bar.gif")
 ```
 
+
+
+
+```{r}
+library(tidyverse)
+
+vgsales <- read_csv("vgsales.csv")
+
+vgsales_clean <- vgsales %>%
+  filter(!is.na(Year),
+         !is.na(Global_Sales),
+         !is.na(Genre),
+         Year >= 1980) %>%
+  mutate(Year = as.numeric(Year))
+
+ggplot(vgsales_clean,
+       aes(x = Year,
+           y = Global_Sales,
+           color = Genre,
+           size = NA_Sales)) +
+  
+  geom_point(alpha = 0.6) +
+  scale_size(range = c(1, 7)) +
+  
+  labs(
+    title = "Global Video Game Sales Over Time by Genre",
+    subtitle = "Point size represents North American Sales (millions)",
+    x = "Release Year",
+    y = "Global Sales (millions)",
+    color = "Genre",
+    size = "NA Sales"
+  ) +
+  
+  coord_cartesian(ylim = c(0, 50)) +
+  theme_classic() +
+  theme(
+    plot.title = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 12),
+    legend.key.height = unit(0.4, "cm"),
+    legend.key.width  = unit(0.4, "cm"),
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 10)
+  ) +
+  
+  # Fix the legend overflow
+  guides(color = guide_legend(ncol = 2))
+```
