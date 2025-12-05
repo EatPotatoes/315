@@ -1,0 +1,170 @@
+---
+title: "36-315 Homework 9, Fall 2025"
+author: Edward Brownhill
+date: "Due Wednesday, Dec. 3, 2025 11:59pm"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: show
+  pdf_document:
+urlcolor: blue
+---
+
+```{r global options, include = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+
+# More Final Project EDA and Text Data Analysis
+
+
+***
+***
+
+
+***General instructions for all homework assignments***: 
+
++ Use this file as the template for your submission.  Be sure to write your name at the top of this page in the author section.
+
++ When writing out answers to questions, please put them in the section designated by **[PUT YOUR ANSWER HERE]** so that your answers are in bold to differentiate them from the problem statements.  Each answer must be supported by written statements (unless otherwise specified).  **Thus, even if you think your code output is self-explanatory, be sure to answer questions with written statements outside of code blocks.**
+
++ For your homework submission, generate an .html file and an .Rmd file (named as: [AndrewID]-315-hw01.Rmd -- e.g. "fsk-315-hw01.Rmd").  When you're done, submit it to Gradescope (a button taking you to the course's Gradescope page can be found on left side of the course's Canvas page).  Gradescope only accepts PDFs, so either knit to PDF (see Lab 0) or take a moment to convert your .html file to a PDF using https://html2pdf.com/ (or a similar converter).
+
++ Your file should contain the code to answer each question in its own code block.  Your code should produce plots/output that will be automatically embedded in the output (.html) file.  Your lab and homework files will include the template code chunks like the following:
+
+```{r}
+# PUT YOUR CODE AND PLOT HERE
+```
+
++ Although it's okay to discuss homework problems with other students, all of your homework (code, written answers, etc.) should be only your own.  Instances of identical, nearly identical, or copied homework will be considered cheating and plagiarism.  In other words, you must follow rules of academic integrity (as detailed in the syllabus).
+
+
+***
+***
+
+
+# Problem 1: Furthering the Group Project [20 pts]
+
+A quick reminder: you have the following due dates for the final project:
+
++ **Monday, December 8 by 11:59pm**: A public-ready HTML file.  Knit via RStudio, but write your file for the public (that is, a "self-contained" file; to check this, try to view it on a different computer than it was knit on - everything should be visible).
++ **Monday--Friday, December 8--12**: 15-minute presentations (somewhere around the Baker Hall 129/229/232 suites for those in Pittsburgh - exact locations to be determined; via Zoom for those not).
+
+Be sure to read the rubric for the final group project that I posted on Canvas.  That's exactly what we will use to evaluate final projects - I hope this makes expectations for the final project clear.  Email me if you have any questions/concerns.
+
+For this problem, using the dataset for your final project, make one of the following types of graphs:
+
+- a dendrogram, PCA-based, or MDS-based plot;
+- a graph related to spatial data (e.g., a choropleth map, heat map, or other map-type graphic);
+- a graph related to time series data (e.g., a moving average, an autocorrelation plot, etc.);
+- a text-related plot (e.g., a word cloud, top TF-IDF words, a sentiment analysis graph, etc.)
+
+I'm pinpointing these graphs because (as explained in the rubric), you must make at least one of these types of graphs for your final project (and it would absolutely be preferable to make more than one non-EDA graph).  If you already made one of the above types of graphs for the previous assignment, please make a new graph this time.
+
+If you don't see how you could make one of the above graphs for your dataset, **email me ASAP and explain why**; however, I think most teams have some element of space, time, or text data, and thus should be able to make one of the last three graphs.  And those with high-dimensional correlated data should be able to make the first graph.
+
+As always, make sure your graph is properly labeled such that it is clear what you are displaying.  For this part, just include your graph and within a couple paragraphs: 
+
+- specify what the scientific question of interest is that this graph answers;
+- explain and interpret the plot;
+- discuss why you think this plot is particularly informative for the kind of question you aimed to address.
+
+```{r, fig.width = 10, fig.height = 8}
+library(tidyverse)
+library(tm)
+library(wordcloud)
+
+vgsales <- read_csv("vgsales.csv")
+
+vgsales_clean <- vgsales %>%
+  filter(!is.na(Name) & !is.na(Global_Sales))
+
+top_games <- vgsales_clean %>%
+  filter(Global_Sales >= quantile(Global_Sales, 0.75, na.rm = TRUE))
+
+low_games <- vgsales_clean %>%
+  filter(Global_Sales < quantile(Global_Sales, 0.75, na.rm = TRUE))
+
+game_titles_top <- Corpus(VectorSource(top_games$Name))
+game_titles_low <- Corpus(VectorSource(low_games$Name))
+
+game_titles_top <- tm_map(game_titles_top, content_transformer(tolower))
+game_titles_top <- tm_map(game_titles_top, removePunctuation)
+game_titles_top <- tm_map(game_titles_top, stripWhitespace)
+
+game_titles_low <- tm_map(game_titles_low, content_transformer(tolower))
+game_titles_low <- tm_map(game_titles_low, removePunctuation)
+game_titles_low <- tm_map(game_titles_low, stripWhitespace)
+
+titleTopLow <- tm:::c.VCorpus(game_titles_top, game_titles_low)
+titleTopLow <- tm_map(titleTopLow, PlainTextDocument)
+
+titleTopLow <- tm_map(titleTopLow, removeWords, stopwords("english"))
+titleTopLow <- tm_map(titleTopLow, stemDocument)
+
+tdm_toplow <- TermDocumentMatrix(titleTopLow)
+
+tdm_toplow <- as.matrix(tdm_toplow)
+
+tdm_toplow_sum <- cbind(
+  Top = rowSums(tdm_toplow[, 1:nrow(top_games)]),
+  Lower = rowSums(tdm_toplow[, (nrow(top_games) + 1):ncol(tdm_toplow)])
+)
+
+comparison.cloud(tdm_toplow_sum,
+                 max.words = 100,
+                 random.order = FALSE,
+                 colors = c("darkgreen", "purple"),
+                 scale = c(3.5, 0.5),
+                 title.size = 1.5,
+                 rot.per = 0.3)
+title(main = "Comparison Word Cloud: Top-Selling vs Lower-Selling Video Games",
+      cex.main = 1.2)
+```
+
+**The scientific question this graph answers is: What words appear more frequently in the titles of top-selling video games compared to lower-selling games? This analysis helps identify naming patterns and branding strategies that correlate with commercial success in the gaming industry. The comparison word cloud reveals distinct differences between top-selling and lower-selling games. Top-selling games (shown in green) are dominated by franchise names like "mario", "wii", "pokemon", "call", and "grand", indicating that established franchises and recognizable brands drive the highest sales. Meanwhile, lower-selling games (shown in purple) feature more diverse and generic terms, suggesting they lack the brand recognition of blockbuster titles. This visualization is particularly informative because it quantifies what many in the industry suspect: franchise recognition is a critical factor in video game sales success. The prominence of platform-specific words like "wii" in top sellers also suggests that first-party Nintendo titles dominate the highest sales tiers, which aligns with the dataset showing Nintendo's market dominance in certain eras.**
+
+Also, after you've made a graph you're happy with, take the time to share your graph with your team so they know what you've done so far.  It's okay if members of your team happen to submit similar graphs for this question, but they **SHOULD NOT** be identical (you should do your own interpretation, as well).  And once again, this is all working toward your team's public document, so don't make a graph that you wouldn't want to ultimately show to the world.
+
+```{r}
+library(tidyverse)
+
+vgsales <- read_csv("vgsales.csv")
+
+summary(vgsales)
+
+sales_by_region <- vgsales %>%
+  filter(!is.na(Year) & Year != "N/A") %>%
+  mutate(Year = as.numeric(Year)) %>%
+  filter(Year <= 2016) %>%
+  pivot_longer(cols = c(NA_Sales, EU_Sales, JP_Sales, Other_Sales),
+               names_to = "Region",
+               values_to = "Sales") %>%
+  group_by(Year, Region) %>%
+  summarize(Total_Sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Region = case_when(
+    Region == "NA_Sales" ~ "North America",
+    Region == "EU_Sales" ~ "Europe",
+    Region == "JP_Sales" ~ "Japan",
+    Region == "Other_Sales" ~ "Other"
+  ))
+
+ggplot(sales_by_region, aes(x = Year, y = Total_Sales, fill = Region)) +
+  geom_area(position = "fill") +
+  scale_fill_discrete() +
+  labs(title = "Proportion of Video Game Sales by Region Over Time",
+       subtitle = "How the global video game market share has shifted (1980-2016)",
+       x = "Year",
+       y = "Proportion of Total Sales",
+       fill = "Region") +
+  theme(legend.position = "bottom")
+```
+
+After you've made your plot, within a couple paragraphs: 
+
+- specify what the scientific question of interest is that this graph answers;
+- explain and interpret the plot;
+- discuss why you think this plot is particularly informative for the kind of question you aimed to address.
+
+**This plot answers the quest if the proportion of video games from each region changes over time. This is a more important question than just the growth of sales in a region over time, because we can assume that the total number will grow over time, as the industry naturally expands. Our graph controls for the overall growth of video games by considering the proportion. The plot shows fairly steady trends for each region: the proportion of total sales Europe represents grows steadily, Japan peaks in the 90s, but hits a constant 10-15% in the 200s, North America hits a low in the 90s, rebounds, and then starts steadily declining as of late, and Other increases slowly. This plot is particularly informative because you can also take 1-year or multi-year slices, to quickly determie characteristics of an era.**
