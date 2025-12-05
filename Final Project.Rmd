@@ -321,3 +321,90 @@ ggplot(vgsales_clean,
   # Fix the legend overflow
   guides(color = guide_legend(ncol = 2))
 ```
+
+```{r, fig.width = 10, fig.height = 8}
+library(tidyverse)
+library(tm)
+library(wordcloud)
+
+vgsales <- read_csv("vgsales.csv")
+
+vgsales_clean <- vgsales %>%
+  filter(!is.na(Name) & !is.na(Global_Sales))
+
+top_games <- vgsales_clean %>%
+  filter(Global_Sales >= quantile(Global_Sales, 0.75, na.rm = TRUE))
+
+low_games <- vgsales_clean %>%
+  filter(Global_Sales < quantile(Global_Sales, 0.75, na.rm = TRUE))
+
+game_titles_top <- Corpus(VectorSource(top_games$Name))
+game_titles_low <- Corpus(VectorSource(low_games$Name))
+
+game_titles_top <- tm_map(game_titles_top, content_transformer(tolower))
+game_titles_top <- tm_map(game_titles_top, removePunctuation)
+game_titles_top <- tm_map(game_titles_top, stripWhitespace)
+
+game_titles_low <- tm_map(game_titles_low, content_transformer(tolower))
+game_titles_low <- tm_map(game_titles_low, removePunctuation)
+game_titles_low <- tm_map(game_titles_low, stripWhitespace)
+
+titleTopLow <- tm:::c.VCorpus(game_titles_top, game_titles_low)
+titleTopLow <- tm_map(titleTopLow, PlainTextDocument)
+
+titleTopLow <- tm_map(titleTopLow, removeWords, stopwords("english"))
+titleTopLow <- tm_map(titleTopLow, stemDocument)
+
+tdm_toplow <- TermDocumentMatrix(titleTopLow)
+
+tdm_toplow <- as.matrix(tdm_toplow)
+
+tdm_toplow_sum <- cbind(
+  Top = rowSums(tdm_toplow[, 1:nrow(top_games)]),
+  Lower = rowSums(tdm_toplow[, (nrow(top_games) + 1):ncol(tdm_toplow)])
+)
+
+comparison.cloud(tdm_toplow_sum,
+                 max.words = 100,
+                 random.order = FALSE,
+                 colors = c("darkgreen", "purple"),
+                 scale = c(3.5, 0.5),
+                 title.size = 1.5,
+                 rot.per = 0.3)
+title(main = "Comparison Word Cloud: Top-Selling vs Lower-Selling Video Games",
+      cex.main = 1.2)
+```
+
+```{r}
+library(tidyverse)
+
+vgsales <- read_csv("vgsales.csv")
+
+summary(vgsales)
+
+sales_by_region <- vgsales %>%
+  filter(!is.na(Year) & Year != "N/A") %>%
+  mutate(Year = as.numeric(Year)) %>%
+  filter(Year <= 2016) %>%
+  pivot_longer(cols = c(NA_Sales, EU_Sales, JP_Sales, Other_Sales),
+               names_to = "Region",
+               values_to = "Sales") %>%
+  group_by(Year, Region) %>%
+  summarize(Total_Sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Region = case_when(
+    Region == "NA_Sales" ~ "North America",
+    Region == "EU_Sales" ~ "Europe",
+    Region == "JP_Sales" ~ "Japan",
+    Region == "Other_Sales" ~ "Other"
+  ))
+
+ggplot(sales_by_region, aes(x = Year, y = Total_Sales, fill = Region)) +
+  geom_area(position = "fill") +
+  scale_fill_discrete() +
+  labs(title = "Proportion of Video Game Sales by Region Over Time",
+       subtitle = "How the global video game market share has shifted (1980-2016)",
+       x = "Year",
+       y = "Proportion of Total Sales",
+       fill = "Region") +
+  theme(legend.position = "bottom")
+```
