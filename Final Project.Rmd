@@ -408,3 +408,116 @@ ggplot(sales_by_region, aes(x = Year, y = Total_Sales, fill = Region)) +
        fill = "Region") +
   theme(legend.position = "bottom")
 ```
+
+
+
+
+
+# ------------------------------------
+```{r genre_prop_dodged, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+vgsales <- read_csv("vgsales.csv")
+
+# Long format & proportions (same as before)
+region_genre_long <- vgsales %>%
+  filter(!is.na(Genre)) %>%
+  select(Genre, NA_Sales, EU_Sales, JP_Sales) %>%
+  pivot_longer(
+    cols = c(NA_Sales, EU_Sales, JP_Sales),
+    names_to = "Region",
+    values_to = "Sales"
+  ) %>%
+  mutate(
+    Region = recode(
+      Region,
+      "NA_Sales" = "North America",
+      "EU_Sales" = "Europe",
+      "JP_Sales" = "Japan"
+    )
+  )
+
+region_genre_props <- region_genre_long %>%
+  group_by(Region, Genre) %>%
+  summarise(total_sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+  group_by(Region) %>%
+  mutate(prop_sales = total_sales / sum(total_sales)) %>%
+  ungroup()
+
+# Order genres by overall global sales share to make plot cleaner
+genre_order <- region_genre_props %>%
+  group_by(Genre) %>%
+  summarise(global_sales = sum(total_sales), .groups = "drop") %>%
+  arrange(desc(global_sales)) %>%
+  pull(Genre)
+
+region_genre_props <- region_genre_props %>%
+  mutate(Genre = factor(Genre, levels = genre_order))
+
+# Dodged bar chart of proportions by genre × region
+ggplot(region_genre_props, aes(x = Genre, y = prop_sales, fill = Region)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Genre Share of Regional Video Game Sales",
+    x = "Genre",
+    y = "Proportion of Region's Total Sales",
+    fill = "Region"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+```
+The plot compares how each region’s total sales are divided across genres. Japan stands out as being much more role-playing heavy than the other regions: RPGs make up a far larger share of Japanese sales than they do in North America or Europe. In contrast, North America and Europe devote more of their sales to action, shooter, and sports games, with Europe especially strong in action and North America stronger in sports and shooters. For most smaller genres (platform, puzzle, adventure, etc.) the shares are more similar, but overall the graph shows clearly different genre mixes across the three regions.
+
+
+
+```{r chisq_genre_region, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+vgsales <- read_csv("vgsales.csv")
+
+# Long format: one row per game-region
+region_genre_long <- vgsales %>%
+  filter(!is.na(Genre)) %>%
+  select(Genre, NA_Sales, EU_Sales, JP_Sales) %>%
+  pivot_longer(
+    cols = c(NA_Sales, EU_Sales, JP_Sales),
+    names_to = "Region",
+    values_to = "Sales"
+  ) %>%
+  mutate(
+    Region = recode(
+      Region,
+      "NA_Sales" = "North America",
+      "EU_Sales" = "Europe",
+      "JP_Sales" = "Japan"
+    )
+  )
+
+# Contingency table: total sales by Region × Genre
+sales_tab <- xtabs(Sales ~ Region + Genre, data = region_genre_long)
+
+# Chi-square test of homogeneity: are genre proportions same across regions?
+chisq_genre_region <- chisq.test(sales_tab)
+
+chisq_genre_region
+```
+
+We used a chi-square test to check whether the mix of genres is the same in North America, Europe, and Japan. The test result was highly significant, with a p-value smaller than 2.2e-16, so we reject the null hypothesis that all three regions have the same genre proportions. This means the way total sales are split across genres really does differ by region. Looking at our genre proportion plot, Japan’s market devotes a much larger share of its sales to role-playing games, while North America and Europe allocate more of their sales to action, shooter, and sports titles.
+
+
+
+
+
+
+**Future Work**
+
+Our project answers some basic questions about how video game sales differ over time, across regions, and by genre, but it also raises several questions we could not address with the current data and methods.
+
+First, we do not observe anything about game quality or marketing, such as review scores, user ratings, advertising budget, or development costs. Because of this, we cannot answer questions like “Do highly rated games sell more than average games after controlling for genre and platform?” or “Is marketing more important than genre or region for creating a blockbuster?” Answering these questions would require merging this dataset with external sources (for example, review sites or publisher reports).
+
+Second, the dataset only includes older physical releases that sold at least 100,000 copies, and it aggregates the world into four broad regions. This prevents us from studying modern topics such as indie games, digital-only titles, free-to-play mobile games, or microtransaction revenue, and it also means we cannot look at differences between specific countries within Europe or North America. Future work could use more recent, country-level datasets to ask whether the genre and region patterns we see still hold in today’s market.
+
+Finally, our analysis uses relatively simple tools: summary plots, and chi-square tests. More advanced techniques, such as time-series forecasting for console lifecycles, logistic regression or tree-based models to predict whether a game becomes a “hit,” or clustering to group similar sales profiles, would allow us to model the industry in more detail. These methods go beyond what we have formally covered in this course, so we treat them as natural extensions rather than part of our main analysis.
