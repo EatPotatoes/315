@@ -1,5 +1,5 @@
 ---
-title: "Video Game Sales Analysis"
+title: "An Analysis of Physical Video Game Sales"
 author: "Albert Zhang (albertz2), Danny Weng (dannywen), Edward Brownhill (ebrownhi)"
 subtitle: "36-315 Final Project (Fall 2025)"
 output:
@@ -135,6 +135,8 @@ differences statistically significant?
 Are there any titles that have been super dominant in the game industry?
 
 ## Analysis
+
+##### (Research Question 1)
 
 One of our main questions of interests is about how the industry has changed 
 over time. One way we can do this is by looking at how the number of global 
@@ -281,7 +283,16 @@ the same data as follows:
 knitr::include_graphics("animated_sales_bar.gif")
 ```
 
+These graphs show how the video game sales industry has changed as a whole, as
+opposed to how it is proportionally split. In general, the industry in its
+entirety has grown quite significantly since the earliest game release recorded
+in this data, and we can see that North American as a region is at the forefront
+of sales for the majority of game release years. Europe follows behind at later
+years, but is about equal or slightly less than Japan before around 2000.
+
 ---
+
+##### (Research Question 2)
 
 Looking deeper into each region, we might be interested in finding out how 
 popular different genres are overall, depending on the region. In particular, we
@@ -426,7 +437,7 @@ usually contains games sold digitally.
 
 ---
 
-
+##### (Research Question 3)
 
 ```{r, echo=FALSE}
 # data %>%
@@ -574,6 +585,7 @@ title(main = "Comparison Word Cloud: Top-Selling vs Lower-Selling Video Games",
       cex.main = 1.2)
 ```
 
+---
 
 ## Future Work
 
