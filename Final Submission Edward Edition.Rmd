@@ -1,0 +1,594 @@
+---
+title: "An Analysis of Physical Video Game Sales"
+author: "Albert Zhang (albertz2), Danny Weng (dannywen), Edward Brownhill (ebrownhi)"
+subtitle: "36-315 Final Project (Fall 2025)"
+output:
+  html_document:
+    df_print: paged
+    self_contained: true
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo = FALSE,
+                      fig.align='center')
+```
+
+## Motivation
+
+Over the past few decades, video games have become a more popular form of 
+entertainment all around the world. Especially since the COVID-19 pandemic in
+which other activities became less feasible due to restrictions, video games 
+have provided a way for people to entertain themselves, and have continued to
+grow in popularity even after restrictions end. 
+
+For regular people, understanding what
+types of games are popular can lead to more informed decision making, such as 
+deciding what console to buy, if one has limited amounts of money. It can also
+be used to see what games have been most dominant worldwide, and if there is a
+difference in preferences for different regions or platforms.
+
+For businesses, understanding common factors for the most successful and most
+popular games can help advise their own strategy for marketing or optimizing
+their own product. For game companies in particular, this data would be valuable
+as a benchmark for competitors, or insight into potentially good or bad 
+collaborations.
+
+## Data Description
+
+The dataset contains a list of video games with sales over 100,000 copies, only 
+including physical games, meaning there are no games sold digitally, 
+free to play games, mobile games, indie games, etc. In this dataset, each row is
+a different game, and the columns consist of information like rank
+(based on sales), platform (PC, PS4, etc.), year of release, genre (shooter,
+sports, racing, etc.), publisher, sales in North America, Europe, Japan, the
+rest of the world, and worldwide (in millions of copies). The data can be found
+here: https://www.kaggle.com/datasets/gregorut/videogamesales?select=vgsales.csv
+but this source cites the data as being scraped from https://www.vgchartz.com.
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(dendextend)
+library(gganimate)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+library(viridis)
+#library(ggseas)
+```
+
+```{r, echo=FALSE}
+# https://www.kaggle.com/datasets/gregorut/videogamesales?select=vgsales.csv
+data = read_csv("vgsales.csv")
+
+data = data %>% 
+  mutate(Year = as.numeric(Year))
+
+data = data %>%
+  mutate(Platform_Group = case_when(
+    Platform %in% c("NES","SNES","N64","GBA","DS","3DS","Wii","WiiU","GC","GB") ~ "Nintendo",
+    Platform %in% c("PS","PS2","PS3","PS4","PSP","PSV") ~ "PlayStation",
+    Platform %in% c("XB","X360","XOne") ~ "Xbox",
+    Platform %in% c("PC","PCFX") ~ "PC",
+    TRUE ~ "Other"
+  ))
+```
+
+```{r}
+# General EDA plot of Global sales, time, NA sales, genre
+# vgsales <- read_csv("vgsales.csv")
+# 
+# vgsales_clean <- vgsales %>%
+#   filter(!is.na(Year),
+#          !is.na(Global_Sales),
+#          !is.na(Genre),
+#          Year >= 1980,
+#          Year <= 2016) %>%
+#   mutate(Year = as.numeric(Year))
+# 
+# ggplot(vgsales_clean,
+#        aes(x = Year,
+#            y = Global_Sales,
+#            color = Genre,
+#            size = NA_Sales)) +
+#   
+#   geom_point(alpha = 0.6) +
+#   scale_size(range = c(1, 7)) +
+#   
+#   labs(
+#     title = "Global Video Game Sales Over Time by Genre",
+#     subtitle = "Point size represents North American Sales (millions)",
+#     x = "Release Year",
+#     y = "Global Sales (millions)",
+#     color = "Genre",
+#     size = "NA Sales"
+#   ) +
+#   
+#   coord_cartesian(ylim = c(0, 50)) +
+#   theme_classic() +
+#   theme(
+#     plot.title = element_text(face = "bold", size = 16),
+#     plot.subtitle = element_text(size = 12),
+#     legend.key.height = unit(0.4, "cm"),
+#     legend.key.width  = unit(0.4, "cm"),
+#     legend.text = element_text(size = 9),
+#     legend.title = element_text(size = 10)
+#   ) +
+#   
+#   # Fix the legend overflow
+#   guides(color = guide_legend(ncol = 2))
+```
+
+## Research Questions
+
+Based on this data and motivation, we came up with the following three main
+research questions we were interested in:
+
+### 1. How has the video game industry changed over time?
+Have certain regions become more or less dominant as the industry has evolved?
+
+### 2. What are some notable differences between video game genres?
+Are certain genres more or less popular in certain regions? Are these 
+differences statistically significant?
+
+### 3. What factors are associated with higher global sales?
+What attributes of a game are useful in predicting the global sales of a game?
+
+## Analysis
+
+##### (Research Question 1)
+
+One of our main questions of interests is about how the industry has changed 
+over time. One way we can do this is by looking at how the number of global 
+sales overall has changed, which can be seen through the 5-year moving average
+shown below:
+
+```{r}
+data %>% 
+  filter(Year <= 2016) %>%
+  group_by(Year) %>% 
+  summarize(Total_Global = sum(Global_Sales, na.rm=TRUE)) %>% 
+  ggplot() +
+  aes(x = Year, y = Total_Global) + 
+  geom_line(color = 'orchid') +
+  stat_rollapplyr(width = 5, fun = mean, align = 'center', color = 'firebrick')+
+  labs(title = "5 Year Moving Average of Global Video Game Sales",
+       x = "Game Release Year", y = "Global Sales (millions)")
+```
+
+One thing to note for this graph (and all other graphs that utilize the Year
+variable) is that the x-axis is specifically game **release year**, not the year
+the sale occurred. This indicates that games released around 2008 (notably, Wii
+Sports, Mario Kart Wii, and Wii Sports Resort) were particularly strong compared
+to other years. The general trend of later years having higher global sales than
+earlier years (pre-2000s) demonstrates the growth of the industry.
+
+Another point of interest might be to see how different regions capture shares
+of the global sales market over time, which can be seen in the graph below:
+
+```{r}
+vgsales <- read_csv("vgsales.csv")
+sales_by_region <- vgsales %>%
+  filter(!is.na(Year) & Year != "N/A") %>%
+  mutate(Year = as.numeric(Year)) %>%
+  filter(Year <= 2016) %>%
+  pivot_longer(cols = c(NA_Sales, EU_Sales, JP_Sales, Other_Sales),
+               names_to = "Region",
+               values_to = "Sales") %>%
+  group_by(Year, Region) %>%
+  summarize(Total_Sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Region = case_when(
+    Region == "NA_Sales" ~ "North America",
+    Region == "EU_Sales" ~ "Europe",
+    Region == "JP_Sales" ~ "Japan",
+    Region == "Other_Sales" ~ "Other"
+  ))
+
+ggplot(sales_by_region, aes(x = Year, y = Total_Sales, fill = Region)) +
+  geom_area(position = "fill") +
+  scale_fill_discrete() +
+  labs(title = "Proportion of Video Game Sales by Region Over Time",
+       subtitle = "How the global video game market share has shifted (1980-2016)",
+       x = "Year",
+       y = "Proportion of Total Sales",
+       fill = "Region") +
+  theme(legend.position = "bottom")
+```
+
+Based on this graph, we can see that the market was very dominated by North
+American sales in the early stages of the industry (around 1980s), and the
+intermediate stages saw a growth of Japan's share of the industry (mid 1980s to
+mid 1990s). After 2000, Japan loses a bit of this share to Europe, North America
+and a little bit to "Other" regions.
+
+We can also see the change in region sales (by count) over time with the 
+following animation:
+
+```{r, echo=FALSE, fig.align='center', out.width='80%'}
+# # Animated Sales Over Time (Visualized on Map)
+# world <- map_data("world")
+# 
+# region_year <- data %>%
+#   group_by(Year) %>%
+#   summarise(
+#     N.A = sum(NA_Sales, na.rm = TRUE),
+#     E.U = sum(EU_Sales, na.rm = TRUE),
+#     J.P = sum(JP_Sales, na.rm = TRUE),
+#     Other = sum(Other_Sales, na.rm = TRUE)
+#   ) %>%
+#   pivot_longer(cols = -Year, names_to = "region", values_to = "sales")
+# 
+# world_mapped <- world %>%
+#   mutate(region = case_when(
+#     region %in% c("USA", "Canada", "Mexico") ~ "N.A",
+#     region %in% c("UK", "France", "Germany", "Italy", "Spain", "Portugal",
+#                   "Netherlands", "Belgium", "Switzerland", "Austria",
+#                   "Poland", "Sweden", "Norway", "Denmark", "Finland") ~ "E.U",
+#     region == "Japan" ~ "J.P",
+#     TRUE ~ "Other"
+#   )) %>%
+#   left_join(region_year, by = "region", relationship = "many-to-many")
+# 
+# p <- ggplot(world_mapped, aes(x = long, y = lat, group = group)) +
+#   geom_polygon(aes(fill = sales), color = "white", size = 0.1) +
+#   scale_fill_viridis_c(
+#     option = "plasma", 
+#     trans = "sqrt",
+#     na.value = "grey90"
+#   ) +
+#   labs(
+#     title = "Video Game Sales by Region: {round(frame_time)}",
+#     subtitle = "Global market distribution over time",
+#     fill = "Sales\n(millions)"
+#   ) +
+#   coord_fixed(1.3) +
+#   transition_time(Year) +
+#   ease_aes('linear')
+# 
+# anim <- animate(
+#   p, 
+#   width = 600,
+#   height = 400,
+#   fps = 5,
+#   duration = 6,
+#   nframes = 30,
+#   renderer = gifski_renderer()
+# )
+# 
+# anim
+# 
+# anim_save("animated_world_sales.gif", animation = anim)
+
+knitr::include_graphics("animated_world_sales.gif")
+```
+
+It is a bit hard to see Japan in the animation above, so we can also visualize
+the same data as follows:
+
+```{r, echo=FALSE, fig.align='center', out.width='80%'}
+# # Bar plot animation
+# p <- ggplot(region_year, aes(x = region, y = sales, fill = region)) +
+#   geom_col() +
+#   scale_fill_viridis_d() +
+#   scale_y_continuous(limits = c(0, 500)) +
+#   labs(title = "Video Game Sales by Region - Year: {as.integer(frame_time)}", 
+#        y = "Sales (millions)", x = "Region") +
+#   transition_time(Year)
+# 
+# anim <- animate(p, nframes = 30, fps = 10, width = 600, height = 400,
+#                 renderer = gifski_renderer())
+# anim
+# anim_save("animated_sales_bar.gif", animation = anim)
+
+knitr::include_graphics("animated_sales_bar.gif")
+```
+
+These graphs show how the video game sales industry has changed as a whole, as
+opposed to how it is proportionally split. In general, the industry in its
+entirety has grown quite significantly since the earliest game release recorded
+in this data, and we can see that North American as a region is at the forefront
+of sales for the majority of game release years. Europe follows behind at later
+years, but is about equal or slightly less than Japan before around 2000.
+
+---
+
+##### (Research Question 2)
+
+Looking deeper into each region, we might be interested in finding out how 
+popular different genres are overall, depending on the region. In particular, we
+can look at how much of a region's sale each genre is to get a sense of how
+popular it is relative to other genres.
+
+```{r genre_prop_dodged, echo=FALSE, message=FALSE, warning=FALSE}
+vgsales <- read_csv("vgsales.csv")
+
+# Long format & proportions (same as before)
+region_genre_long <- vgsales %>%
+  filter(!is.na(Genre)) %>%
+  select(Genre, NA_Sales, EU_Sales, JP_Sales) %>%
+  pivot_longer(
+    cols = c(NA_Sales, EU_Sales, JP_Sales),
+    names_to = "Region",
+    values_to = "Sales"
+  ) %>%
+  mutate(
+    Region = recode(
+      Region,
+      "NA_Sales" = "North America",
+      "EU_Sales" = "Europe",
+      "JP_Sales" = "Japan"
+    )
+  )
+
+region_genre_props <- region_genre_long %>%
+  group_by(Region, Genre) %>%
+  summarise(total_sales = sum(Sales, na.rm = TRUE), .groups = "drop") %>%
+  group_by(Region) %>%
+  mutate(prop_sales = total_sales / sum(total_sales)) %>%
+  ungroup()
+
+# Order genres by overall global sales share to make plot cleaner
+genre_order <- region_genre_props %>%
+  group_by(Genre) %>%
+  summarise(global_sales = sum(total_sales), .groups = "drop") %>%
+  arrange(desc(global_sales)) %>%
+  pull(Genre)
+
+region_genre_props <- region_genre_props %>%
+  mutate(Genre = factor(Genre, levels = genre_order))
+
+# Dodged bar chart of proportions by genre × region
+ggplot(region_genre_props, aes(x = Genre, y = prop_sales, fill = Region)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Genre Share of Regional Video Game Sales",
+    x = "Genre",
+    y = "Proportion of Region's Total Sales",
+    fill = "Region"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+```
+
+The plot compares how each region’s total sales are divided across genres. Japan 
+stands out as being much more role-playing heavy than the other regions: RPGs 
+make up a far larger share of Japanese sales than they do in North America or 
+Europe. In contrast, North America and Europe devote more of their sales to 
+action, shooter, and sports games, with Europe especially strong in action and 
+North America stronger in sports and shooters. For most smaller genres 
+(platform, puzzle, adventure, etc.) the shares are more similar, but overall the
+graph shows clearly different genre mixes across the three regions.
+
+However, just to ensure that there is a difference in genre prevalences for the
+three regions represented in the data (North America, Europe, and Japan), we can
+run a chi-squared test of homogeneity for each combination of region and genre.
+
+```{r chisq_genre_region, echo=FALSE, message=FALSE, warning=FALSE}
+vgsales <- read_csv("vgsales.csv")
+
+# Long format: one row per game-region
+region_genre_long <- vgsales %>%
+  filter(!is.na(Genre)) %>%
+  select(Genre, NA_Sales, EU_Sales, JP_Sales) %>%
+  pivot_longer(
+    cols = c(NA_Sales, EU_Sales, JP_Sales),
+    names_to = "Region",
+    values_to = "Sales"
+  ) %>%
+  mutate(
+    Region = recode(
+      Region,
+      "NA_Sales" = "North America",
+      "EU_Sales" = "Europe",
+      "JP_Sales" = "Japan"
+    )
+  )
+
+# Contingency table: total sales by Region × Genre
+sales_tab <- xtabs(Sales ~ Region + Genre, data = region_genre_long)
+
+# Chi-square test of homogeneity: are genre proportions same across regions?
+chisq_genre_region <- chisq.test(sales_tab)
+
+chisq_genre_region
+```
+
+We used a chi-square test to check whether the mix of genres is the same in 
+North America, Europe, and Japan. The test result was statistically significant, 
+with a p-value smaller than 2.2e-16, so we reject the null hypothesis that all 
+three regions have the same genre proportions. This means the way total sales 
+are  split across genres really does differ by region. Looking at our genre 
+proportion plot, Japan’s market devotes a much larger share of its sales to 
+role-playing games, while North America and Europe allocate more of their sales 
+to action, shooter, and sports titles.
+
+Diving more into genre analysis, we can see how different genres sell globally,
+and how these sales break down across different platforms of games.
+
+```{r}
+genre_platform_data = data %>% 
+  group_by(Platform_Group, Genre) %>% 
+  summarize(Global_Sales = sum(Global_Sales, na.rm = TRUE)) %>% 
+  ungroup()
+
+genre_platform_data$Genre = reorder(genre_platform_data$Genre,
+                                    -genre_platform_data$Global_Sales)
+
+genre_platform_data %>% 
+  ggplot() + 
+  aes(x = Genre, y = Global_Sales, fill = Platform_Group) + 
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle=30)) + 
+  labs(title = "Number of Global Video Game Sales by Genre and Platform Type",
+       x = "Genre", y = "Number of Global Sales (millions)",
+       fill = "Platform Type")
+```
+
+We can see from the graph that Action is the most popular genre, followed by 
+Sports and Shooter, whereas the least popular genre is Strategy, followed by 
+Adventure and Puzzle. We can also indirectly see that in general, Nintendo and 
+PlayStation are the more dominant platforms compared to other platforms like 
+Xbox, PC, or Other. It is once agin worth noting that this dataset does not 
+contain digital sales, which could explain the low number of sales for PC, which
+usually contains games sold digitally.
+
+---
+
+##### (Research Question 3)
+
+To start our answer of research question 3, examining which factors impact
+global sales, we will select a variable or two in each graph, and visualize
+their relationship with sales.
+
+```{r, echo=FALSE}
+data %>%
+  filter(Year != "N/A") %>%
+  group_by(Year) %>%
+  summarize(Global_Sales_Year = sum(Global_Sales),
+            Genre = Genre) %>%
+  ggplot() +
+  aes(x = Year, y = Global_Sales_Year) +
+  geom_col() +
+  facet_wrap(~ Genre) +
+  theme(axis.text.x = element_text(angle=-90))
+```
+
+This faceted bar chart shows global sales trends over time for each genre
+separately. The distributions of time versus sales have the same general
+right-skewed patterns, but looking closer can tell you how a genre evolved 
+over time. For instance, shooter and platformer games saw rapid growth in the 
+2000s, but saw their growth stagnate in the 2010's, when other genres were 
+performing well. On the inverse, adventure and action games saw low sales
+in the early 2000s, but really took off in the 2010s. We can conclude that the
+temporal patterns differ notably across genres, suggesting that the release year
+and genre interact in their association with sales performance.
+
+
+We can also examine how different platform types have performed over time by
+looking at individual game sales with platform-specific trend lines:
+
+```{r, echo=FALSE, fig.width=9, fig.height=6}
+data %>%
+  filter(!is.na(Year), Year <= 2016, Platform_Group != "Other", Global_Sales > 0) %>%
+  ggplot(aes(x = Year, y = Global_Sales, color = Platform_Group)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1.2) +
+  scale_y_log10(labels = scales::comma) +
+  labs(title = "Video Game Sales Over Time by Platform Type (Log Scale)",
+       subtitle = "Individual games shown with platform-specific regression lines",
+       x = "Release Year",
+       y = "Global Sales (millions, log scale)",
+       color = "Platform Type") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+This scatterplot displays individual game sales, with a log transform on that
+variable for graph readability, over time, with each point representing a 
+single game colored by its platform type. The regression lines are also 
+colored by platform type, revealing that Nintendo and PlayStation see a 
+consistent drop in global sales per game, with the linear decrease suggesting an 
+exponential decrease outside of the log transform. The inverse is true for Xbox,
+with an exponential increase. Finally, PC remains extremely consistent. Note how
+this examines sales per game, as the games are plotted individually, and not a 
+total sales sum, which was used in many other of the plots. The shaded 
+confidence intervals around each line indicate the uncertainty in these trends.
+
+
+```{r, fig.width = 8, fig.height = 6}
+vgsales <- read_csv("vgsales.csv")
+
+vgsales_clean <- vgsales %>%
+  filter(!is.na(Name) & !is.na(Global_Sales))
+
+top_games <- vgsales_clean %>%
+  filter(Global_Sales >= quantile(Global_Sales, 0.75, na.rm = TRUE))
+
+low_games <- vgsales_clean %>%
+  filter(Global_Sales < quantile(Global_Sales, 0.75, na.rm = TRUE))
+
+game_titles_top <- Corpus(VectorSource(top_games$Name))
+game_titles_low <- Corpus(VectorSource(low_games$Name))
+
+game_titles_top <- tm_map(game_titles_top, content_transformer(tolower))
+game_titles_top <- tm_map(game_titles_top, removePunctuation)
+game_titles_top <- tm_map(game_titles_top, stripWhitespace)
+
+game_titles_low <- tm_map(game_titles_low, content_transformer(tolower))
+game_titles_low <- tm_map(game_titles_low, removePunctuation)
+game_titles_low <- tm_map(game_titles_low, stripWhitespace)
+
+titleTopLow <- tm:::c.VCorpus(game_titles_top, game_titles_low)
+titleTopLow <- tm_map(titleTopLow, PlainTextDocument)
+
+titleTopLow <- tm_map(titleTopLow, removeWords, stopwords("english"))
+titleTopLow <- tm_map(titleTopLow, stemDocument)
+
+tdm_toplow <- TermDocumentMatrix(titleTopLow)
+
+tdm_toplow <- as.matrix(tdm_toplow)
+
+tdm_toplow_sum <- cbind(
+  Top = rowSums(tdm_toplow[, 1:nrow(top_games)]),
+  Lower = rowSums(tdm_toplow[, (nrow(top_games) + 1):ncol(tdm_toplow)])
+)
+
+par(mar = c(2, 1, 5, 1))
+comparison.cloud(tdm_toplow_sum,
+                 max.words = 100,
+                 random.order = FALSE,
+                 colors = c("darkgreen", "purple"),
+                 scale = c(3.0, 0.4),
+                 title.size = 1.5,
+                 rot.per = 0.3,
+                 vfuzz = 3)
+title(main = "Comparison Word Cloud: Top-Selling vs Lower-Selling Video Games",
+      cex.main = 1.0, line = 3.5)
+```
+
+This cloud investigates if something as simple as the title can be used to predict sales. 
+This comparison word cloud highlights the most common words appearing in the
+titles of top-selling games (top 25% by global sales) versus lower-selling games
+(bottom 75%). The word cloud reveals that top-selling titles are more likely to
+include recognizable franchise names and established series. Words like "mario,"
+"nfl," "lego," and other major franchise identifiers appear more prominently
+in the top-selling category, while lower-selling games contain more generic 
+descriptions, such as "battle" and "portable". This suggests that brand 
+recognition and established franchises are strongly associated with higher global 
+sales, which makes sense given that well-known series benefit from existing fan 
+bases and marketing recognition.
+
+---
+
+## Future Work
+
+Our project answers some basic questions about how video game sales differ over 
+time, across regions, and by genre, but it also raises several questions we 
+could not address with the current data and methods.
+
+First, we do not observe anything about game quality or marketing, such as 
+review scores, user ratings, advertising budget, or development costs. Because 
+of this, we cannot answer questions like “Do highly rated games sell more than 
+average games after controlling for genre and platform?” or “Is marketing more 
+important than genre or region for creating a blockbuster?” Answering these 
+questions would require merging this dataset with external sources (for example,
+review sites or publisher reports).
+
+Second, the dataset only includes older physical releases that sold at least 
+100,000 copies, and it aggregates the world into four broad regions. This 
+prevents us from studying modern topics such as indie games, digital-only 
+titles, free-to-play mobile games, or microtransaction revenue, and it also 
+means we cannot look at differences between specific countries within Europe or 
+North America. Future work could use more recent, country-level datasets to ask 
+whether the genre and region patterns we see still hold in today’s market.
+
+Finally, our analysis uses relatively simple tools: summary plots, and 
+chi-square tests. More advanced techniques, such as time-series forecasting for
+console lifecycles, logistic regression or tree-based models to predict whether
+a game becomes a “hit,” or clustering to group similar sales profiles, would 
+allow us to model the industry in more detail. These methods go beyond what we 
+have formally covered in this course, so we treat them as natural extensions 
+rather than part of our main analysis.
