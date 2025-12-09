@@ -54,7 +54,7 @@ library(rnaturalearth)
 library(rnaturalearthdata)
 library(sf)
 library(viridis)
-#library(ggseas)
+library(ggseas)
 ```
 
 ```{r, echo=FALSE}
@@ -591,4 +591,5 @@ console lifecycles, logistic regression or tree-based models to predict whether
 a game becomes a “hit,” or clustering to group similar sales profiles, would 
 allow us to model the industry in more detail. These methods go beyond what we 
 have formally covered in this course, so we treat them as natural extensions 
+
 rather than part of our main analysis.
